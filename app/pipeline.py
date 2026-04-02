@@ -37,7 +37,8 @@ class RuntimeConfig:
 
 
 PROMPT_SUFFIX = (
-    "Zoom out slightly, center the subject, add 8-12% safe margin/padding on all sides, "
+    "Render as a widescreen 16:9 presentation slide (single page), "
+    "zoom out slightly, center the subject, add 8-12% safe margin/padding on all sides, "
     "ensure nothing is cropped or out of frame."
 )
 
@@ -1611,6 +1612,7 @@ Key points:
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_bytes(image_bytes)
+                self._safe_enforce_widescreen_16x9(output_path)
                 if logger and slide_page is not None:
                     logger.append_slide_event(
                         slide_page,
@@ -1732,6 +1734,7 @@ Key points:
                                 },
                             )
                         self._download_to_path(session, urls[0], output_path, self.settings.image_timeout)
+                        self._safe_enforce_widescreen_16x9(output_path)
                         return
 
                     b64_json = str(data.get("b64_json") or "")
@@ -1751,6 +1754,7 @@ Key points:
                             )
                         output_path.parent.mkdir(parents=True, exist_ok=True)
                         output_path.write_bytes(base64.b64decode(b64_json))
+                        self._safe_enforce_widescreen_16x9(output_path)
                         return
 
                     if logger and slide_page is not None:
@@ -2064,6 +2068,53 @@ Key points:
                     if chunk:
                         fp.write(chunk)
             os.replace(tmp, save_path)
+
+    @staticmethod
+    def _safe_enforce_widescreen_16x9(image_path: Path) -> None:
+        try:
+            PPTImagePipeline._enforce_widescreen_16x9(image_path)
+        except Exception:
+            return
+
+    @staticmethod
+    def _enforce_widescreen_16x9(image_path: Path) -> None:
+        from PIL import Image  # type: ignore
+
+        target_ratio = 16 / 9
+        with Image.open(image_path) as opened:
+            img = opened.copy()
+
+        width, height = img.size
+        if width <= 0 or height <= 0:
+            return
+
+        ratio = width / height
+        if abs(ratio - target_ratio) / target_ratio <= 0.01:
+            return
+
+        if ratio > target_ratio:
+            canvas_w = width
+            canvas_h = int(round(width / target_ratio))
+        else:
+            canvas_h = height
+            canvas_w = int(round(height * target_ratio))
+
+        if canvas_w <= 0 or canvas_h <= 0:
+            return
+
+        if img.mode in ("RGBA", "LA"):
+            background = Image.new("RGBA", (canvas_w, canvas_h), (255, 255, 255, 255))
+            x = (canvas_w - width) // 2
+            y = (canvas_h - height) // 2
+            background.paste(img, (x, y), mask=img.split()[-1])
+            background.convert("RGB").save(image_path, format="PNG")
+            return
+
+        background = Image.new("RGB", (canvas_w, canvas_h), (255, 255, 255))
+        x = (canvas_w - width) // 2
+        y = (canvas_h - height) // 2
+        background.paste(img.convert("RGB"), (x, y))
+        background.save(image_path, format="PNG")
 
     @staticmethod
     def _augment_prompt(prompt: str) -> str:

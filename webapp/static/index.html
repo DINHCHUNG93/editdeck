@@ -10,7 +10,7 @@
     <main class="page">
       <header class="hero">
         <h1>PPT 图片与可编辑 PPT 工作台</h1>
-        <p>先生成整套页面图片和普通 PPT，再按需继续转换为可编辑 PPT。</p>
+        <p>先生成整套 PPT 图片和普通 PPT，再按需继续转换为可编辑 PPT。可编辑流程统一使用 Edit 后端。</p>
       </header>
 
       <section class="card">
@@ -28,16 +28,15 @@
           <div class="row">
             <label>
               页数
-              <input name="slide_count" type="text" value="auto" placeholder="auto 或 8" />
+              <input name="slide_count" type="text" value="auto" placeholder="auto 或 4" />
             </label>
             <label>
               信息密度
               <select name="information_density">
-                <option value="auto">auto: 不额外限制</option>
-                <option value="low">low: 1-3 个要点</option>
-                <option value="medium" selected>medium: 3-5 个要点</option>
-                <option value="high">high: 5-7 个要点</option>
-                <option value="extra">extra: 7-10 个要点</option>
+                <option value="low">low: 1-3 要点</option>
+                <option value="medium" selected>medium: 3-5 要点</option>
+                <option value="high">high: 5-7 要点</option>
+                <option value="extra">extra: 7-10 要点</option>
               </select>
             </label>
           </div>
@@ -58,17 +57,19 @@
               风格模板图
               <input name="style_template" type="file" accept="image/*" />
             </label>
+            <label>
+              婧愭枃浠?
+              <input name="source_files" type="file" accept=".txt,.md,.pdf,.docx" multiple />
+            </label>
             <div class="editable-controls">
               <label class="checkbox">
                 <input name="generate_editable_ppt" type="checkbox" value="true" />
-                <span>生成完成后继续转换为可编辑 PPT</span>
+                <span>生成图片后继续转换为可编辑 PPT</span>
               </label>
               <fieldset class="backend-fieldset">
                 <legend>可编辑素材后端</legend>
                 <input name="asset_backend" type="hidden" value="edit" />
-                <p class="field-hint">
-                  当前固定使用 `edit` 后端，通过 MinerU 解析页面元素并匹配 PH 占位符。
-                </p>
+                <p class="field-hint">当前固定为 Edit 后端，通过 MinerU 解析页面元素并匹配 PH 占位符。</p>
               </fieldset>
             </div>
           </div>
@@ -78,12 +79,12 @@
             <textarea
               name="style_description"
               rows="3"
-              placeholder="例如：简洁商务风，白底与浅灰底为主，黑灰文字，少量蓝色点缀，图表克制、结构清晰"
+              placeholder="例如：简约商务风，白底与浅灰底为主，黑灰文字，少量蓝色点缀，留白充足，图表克制、结构清晰"
             ></textarea>
           </label>
 
           <details>
-            <summary>基础模型配置（覆盖配置文件）</summary>
+            <summary>基础模型配置（覆盖 .env）</summary>
             <div class="row">
               <label>
                 Base URL
@@ -91,11 +92,7 @@
               </label>
               <label>
                 图片接口 URL
-                <input
-                  name="image_api_url"
-                  type="text"
-                  placeholder="https://grsai.dakka.com.cn/v1/draw/completions"
-                />
+                <input name="image_api_url" type="text" placeholder="https://grsai.dakka.com.cn/v1/draw/completions" />
               </label>
             </div>
             <div class="row">
@@ -111,11 +108,11 @@
             <div class="row">
               <label>
                 文本 API Key
-                <input name="text_api_key" type="password" placeholder="留空则使用配置文件中的值" />
+                <input name="text_api_key" type="password" placeholder="sk-..." />
               </label>
               <label>
                 图片 API Key
-                <input name="image_api_key" type="password" placeholder="留空则使用配置文件中的值" />
+                <input name="image_api_key" type="password" placeholder="sk-..." />
               </label>
             </div>
           </details>
@@ -129,21 +126,17 @@
               </label>
               <label>
                 Editable API Key
-                <input name="editable_api_key" type="password" placeholder="留空则复用文本模型配置" />
+                <input name="editable_api_key" type="password" placeholder="留空则复用文本模型 API Key" />
               </label>
             </div>
             <div class="row">
               <label>
                 Editable 模型
-                <input name="editable_model" type="text" placeholder="留空则使用配置文件中的模型" />
+                <input name="editable_model" type="text" placeholder="留空则使用 .env 中的 EDITABLE_PPT_MODEL" />
               </label>
               <label>
                 浏览器路径
-                <input
-                  name="editable_browser_path"
-                  type="text"
-                  placeholder="留空则自动探测浏览器或使用 Playwright 内置 Chromium"
-                />
+                <input name="editable_browser_path" type="text" placeholder="例如：C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" />
               </label>
             </div>
             <div class="row">
@@ -152,7 +145,7 @@
                 <input name="editable_max_attempts" type="number" min="1" placeholder="3" />
               </label>
               <label>
-                素材输出目录
+                资产输出目录
                 <input name="assets_dir" type="text" placeholder="可选，留空则使用默认目录" />
               </label>
             </div>
@@ -173,7 +166,7 @@
               </label>
               <label>
                 Editable Prompt 文件
-                <input name="editable_prompt_file" type="text" placeholder="可选，自定义 prompt 文件路径" />
+                <input name="editable_prompt_file" type="text" placeholder="可选，自定义 editable_slide_builder.md 路径" />
               </label>
             </div>
             <div class="row">
@@ -197,7 +190,7 @@
               </label>
               <label>
                 MinerU API Key
-                <input name="mineru_api_key" type="password" placeholder="留空则使用配置文件中的值" />
+                <input name="mineru_api_key" type="password" placeholder="Bearer Token" />
               </label>
             </div>
             <div class="row">
@@ -231,7 +224,7 @@
               <label>
                 公式识别
                 <select name="mineru_enable_formula">
-                  <option value="">跟随配置文件</option>
+                  <option value="">跟随 .env</option>
                   <option value="true" selected>启用</option>
                   <option value="false">禁用</option>
                 </select>
@@ -239,7 +232,7 @@
               <label>
                 表格识别
                 <select name="mineru_enable_table">
-                  <option value="">跟随配置文件</option>
+                  <option value="">跟随 .env</option>
                   <option value="true" selected>启用</option>
                   <option value="false">禁用</option>
                 </select>
@@ -249,7 +242,7 @@
               <label>
                 OCR
                 <select name="mineru_is_ocr">
-                  <option value="">跟随配置文件</option>
+                  <option value="">跟随 .env</option>
                   <option value="true" selected>启用</option>
                   <option value="false">禁用</option>
                 </select>

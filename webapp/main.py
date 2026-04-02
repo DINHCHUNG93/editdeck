@@ -12,10 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from app.editable_ppt import EditableDeckPipeline
 from app.pipeline import PPTImagePipeline
 from app.settings import get_settings
+from app.source_ingest import SourceDocumentProcessor, SourceFileInput
 
 settings = get_settings()
 pipeline = PPTImagePipeline(settings=settings)
 editable_pipeline = EditableDeckPipeline(settings=settings)
+source_processor = SourceDocumentProcessor(settings=settings)
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -195,6 +197,39 @@ def _build_editable_runtime_config(
     )
 
 
+def _build_source_runtime_config(
+    *,
+    text_provider: str,
+    text_base_url: str,
+    text_api_key: str,
+    text_model: str,
+    mineru_base_url: Optional[str],
+    mineru_api_key: Optional[str],
+    mineru_model_version: Optional[str],
+    mineru_language: Optional[str],
+    mineru_enable_formula: Optional[bool],
+    mineru_enable_table: Optional[bool],
+    mineru_is_ocr: Optional[bool],
+    mineru_poll_interval_seconds: Optional[float],
+    mineru_timeout_seconds: Optional[int],
+):
+    return source_processor.build_runtime_config(
+        text_provider=text_provider,
+        text_base_url=text_base_url,
+        text_api_key=text_api_key,
+        text_model=text_model,
+        mineru_base_url=mineru_base_url,
+        mineru_api_key=mineru_api_key,
+        mineru_model_version=mineru_model_version,
+        mineru_language=mineru_language,
+        mineru_enable_formula=mineru_enable_formula,
+        mineru_enable_table=mineru_enable_table,
+        mineru_is_ocr=mineru_is_ocr,
+        mineru_poll_interval_seconds=mineru_poll_interval_seconds,
+        mineru_timeout_seconds=mineru_timeout_seconds,
+    )
+
+
 def _validate_editable_backend_args(
     *,
     asset_backend: Optional[str],
@@ -208,12 +243,14 @@ def _validate_editable_backend_args(
 def _run_generation_job(
     job_id: str,
     user_requirement: str,
+    source_files: list[SourceFileInput],
     slide_count: Optional[int],
     information_density: str,
     style_description: Optional[str],
     style_bytes: Optional[bytes],
     style_mime: Optional[str],
     runtime_cfg,
+    source_runtime_cfg,
     export_mode: str,
     generate_editable_ppt: bool,
     editable_runtime_cfg,
@@ -234,6 +271,11 @@ def _run_generation_job(
         )
 
     try:
+        prepared_requirement = source_processor.prepare_requirement(
+            user_requirement=user_requirement,
+            source_files=source_files,
+            runtime_cfg=source_runtime_cfg,
+        )
         generation_progress = on_progress
         editable_progress = on_progress
         if generate_editable_ppt:
@@ -241,7 +283,7 @@ def _run_generation_job(
             editable_progress = _scaled_progress_callback(on_progress, 60, 100)
 
         result = pipeline.run(
-            user_requirement=user_requirement,
+            user_requirement=prepared_requirement.final_requirement,
             slide_count=slide_count,
             style_description=style_description,
             style_template_bytes=style_bytes,
@@ -348,6 +390,7 @@ async def generate_sync(
     information_density: Optional[str] = Form(default="medium"),
     style_description: Optional[str] = Form(default=None),
     style_template: Optional[UploadFile] = File(default=None),
+    source_files: Optional[list[UploadFile]] = File(default=None),
     export_mode: str = Form(default="both"),
     generate_editable_ppt: Optional[str] = Form(default="false"),
     base_url: Optional[str] = Form(default=None),
@@ -391,6 +434,21 @@ async def generate_sync(
             text_model=text_model,
             image_model=image_model,
         )
+        source_runtime_cfg = _build_source_runtime_config(
+            text_provider=runtime_cfg.text_provider,
+            text_base_url=runtime_cfg.text_base_url,
+            text_api_key=runtime_cfg.text_api_key,
+            text_model=runtime_cfg.text_model,
+            mineru_base_url=mineru_base_url,
+            mineru_api_key=mineru_api_key,
+            mineru_model_version=mineru_model_version,
+            mineru_language=mineru_language,
+            mineru_enable_formula=_parse_bool(mineru_enable_formula) if mineru_enable_formula is not None else None,
+            mineru_enable_table=_parse_bool(mineru_enable_table) if mineru_enable_table is not None else None,
+            mineru_is_ocr=_parse_bool(mineru_is_ocr) if mineru_is_ocr is not None else None,
+            mineru_poll_interval_seconds=mineru_poll_interval_seconds,
+            mineru_timeout_seconds=mineru_timeout_seconds,
+        )
         editable_runtime_cfg = None
         if _parse_bool(generate_editable_ppt):
             _validate_editable_backend_args(
@@ -423,10 +481,20 @@ async def generate_sync(
             )
         style_bytes = await style_template.read() if style_template else None
         style_mime = style_template.content_type if style_template else None
+        source_payloads = [
+            SourceFileInput(name=upload.filename or "source", data=await upload.read())
+            for upload in (source_files or [])
+            if upload and (upload.filename or "").strip()
+        ]
         _validate_style_inputs(style_description=style_description, style_bytes=style_bytes)
+        prepared_requirement = source_processor.prepare_requirement(
+            user_requirement=user_requirement,
+            source_files=source_payloads,
+            runtime_cfg=source_runtime_cfg,
+        )
 
         result = pipeline.run(
-            user_requirement=user_requirement,
+            user_requirement=prepared_requirement.final_requirement,
             slide_count=resolved_slide_count,
             style_description=style_description,
             style_template_bytes=style_bytes,
@@ -458,6 +526,7 @@ async def generate_start(
     information_density: Optional[str] = Form(default="medium"),
     style_description: Optional[str] = Form(default=None),
     style_template: Optional[UploadFile] = File(default=None),
+    source_files: Optional[list[UploadFile]] = File(default=None),
     export_mode: str = Form(default="both"),
     generate_editable_ppt: Optional[str] = Form(default="false"),
     base_url: Optional[str] = Form(default=None),
@@ -501,6 +570,21 @@ async def generate_start(
             text_model=text_model,
             image_model=image_model,
         )
+        source_runtime_cfg = _build_source_runtime_config(
+            text_provider=runtime_cfg.text_provider,
+            text_base_url=runtime_cfg.text_base_url,
+            text_api_key=runtime_cfg.text_api_key,
+            text_model=runtime_cfg.text_model,
+            mineru_base_url=mineru_base_url,
+            mineru_api_key=mineru_api_key,
+            mineru_model_version=mineru_model_version,
+            mineru_language=mineru_language,
+            mineru_enable_formula=_parse_bool(mineru_enable_formula) if mineru_enable_formula is not None else None,
+            mineru_enable_table=_parse_bool(mineru_enable_table) if mineru_enable_table is not None else None,
+            mineru_is_ocr=_parse_bool(mineru_is_ocr) if mineru_is_ocr is not None else None,
+            mineru_poll_interval_seconds=mineru_poll_interval_seconds,
+            mineru_timeout_seconds=mineru_timeout_seconds,
+        )
         editable_runtime_cfg = None
         if _parse_bool(generate_editable_ppt):
             _validate_editable_backend_args(
@@ -533,6 +617,11 @@ async def generate_start(
             )
         style_bytes = await style_template.read() if style_template else None
         style_mime = style_template.content_type if style_template else None
+        source_payloads = [
+            SourceFileInput(name=upload.filename or "source", data=await upload.read())
+            for upload in (source_files or [])
+            if upload and (upload.filename or "").strip()
+        ]
         _validate_style_inputs(style_description=style_description, style_bytes=style_bytes)
 
         job_id = _create_job()
@@ -541,12 +630,14 @@ async def generate_start(
             args=(
                 job_id,
                 user_requirement,
+                source_payloads,
                 resolved_slide_count,
                 resolved_information_density,
                 style_description,
                 style_bytes,
                 style_mime,
                 runtime_cfg,
+                source_runtime_cfg,
                 export_mode,
                 _parse_bool(generate_editable_ppt),
                 editable_runtime_cfg,

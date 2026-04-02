@@ -50,6 +50,20 @@ def _load_style_template(path: Optional[str]) -> tuple[Optional[bytes], Optional
     return template_path.read_bytes(), mime_map.get(suffix, "application/octet-stream")
 
 
+def _load_source_files(paths: Optional[list[str]]) -> list[object]:
+    if not paths:
+        return []
+    from app.source_ingest import SourceFileInput
+
+    source_files: list[object] = []
+    for raw_path in paths:
+        path = Path(raw_path).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Source file not found: {path}")
+        source_files.append(SourceFileInput(name=path.name, data=path.read_bytes()))
+    return source_files
+
+
 class ProgressPrinter:
     def __init__(self) -> None:
         self.last_line = ""
@@ -108,6 +122,12 @@ def _add_shared_generation_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--style-description", help="Style description text.")
     parser.add_argument("--style-template", help="Style reference image path.")
+    parser.add_argument(
+        "--source-file",
+        dest="source_files",
+        action="append",
+        help="Optional source document path. Repeatable. Supports .txt/.md/.pdf/.docx.",
+    )
     parser.add_argument(
         "--export-mode",
         choices=["images", "ppt", "both"],
@@ -237,6 +257,7 @@ def _run_generate(args: argparse.Namespace) -> int:
     from app.editable_ppt import EditableDeckPipeline
     from app.pipeline import PPTImagePipeline
     from app.settings import load_settings
+    from app.source_ingest import SourceDocumentProcessor
 
     requirement = _load_requirement(args.requirement, args.requirement_file)
     if args.style_description and args.style_template:
@@ -254,6 +275,7 @@ def _run_generate(args: argparse.Namespace) -> int:
 
     pipeline = PPTImagePipeline(settings=settings)
     editable_pipeline = EditableDeckPipeline(settings=settings)
+    source_processor = SourceDocumentProcessor(settings=settings)
     runtime_cfg = pipeline.build_runtime_config(
         base_url=args.base_url,
         image_api_url=args.image_api_url,
@@ -262,8 +284,29 @@ def _run_generate(args: argparse.Namespace) -> int:
         text_model=args.text_model,
         image_model=args.image_model,
     )
+    source_runtime_cfg = source_processor.build_runtime_config(
+        text_provider=runtime_cfg.text_provider,
+        text_base_url=runtime_cfg.text_base_url,
+        text_api_key=runtime_cfg.text_api_key,
+        text_model=runtime_cfg.text_model,
+        mineru_base_url=args.mineru_base_url,
+        mineru_api_key=args.mineru_api_key,
+        mineru_model_version=args.mineru_model_version,
+        mineru_language=args.mineru_language,
+        mineru_enable_formula=False if getattr(args, "mineru_disable_formula", False) else None,
+        mineru_enable_table=False if getattr(args, "mineru_disable_table", False) else None,
+        mineru_is_ocr=False if getattr(args, "mineru_disable_ocr", False) else None,
+        mineru_poll_interval_seconds=args.mineru_poll_interval_seconds,
+        mineru_timeout_seconds=args.mineru_timeout_seconds,
+    )
     editable_runtime_cfg = _build_editable_runtime_config(editable_pipeline, args) if args.editable_ppt else None
     style_bytes, style_mime = _load_style_template(args.style_template)
+    source_payloads = _load_source_files(args.source_files)
+    prepared_requirement = source_processor.prepare_requirement(
+        user_requirement=requirement,
+        source_files=source_payloads,
+        runtime_cfg=source_runtime_cfg,
+    )
     progress = ProgressPrinter()
 
     generation_progress = progress
@@ -273,7 +316,7 @@ def _run_generate(args: argparse.Namespace) -> int:
         editable_progress = _scaled_progress_callback(progress, 60, 100)
 
     result = pipeline.run(
-        user_requirement=requirement,
+        user_requirement=prepared_requirement.final_requirement,
         slide_count=_parse_slide_count(args.slide_count),
         style_description=args.style_description,
         style_template_bytes=style_bytes,
