@@ -26,6 +26,7 @@
 <p align="center">
   <a href="#why">Why</a> ·
   <a href="#highlights">Highlights</a> ·
+  <a href="#public-site">Public Site</a> ·
   <a href="#showcase">Showcase</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#usage">Usage</a> ·
@@ -62,17 +63,16 @@ If your ideal workflow is "get the visual draft fast, then keep going until the 
 - Better cross-platform support: the browser path can be left empty — at runtime it auto-detects from explicit arguments, environment variables, and the system `PATH`
 - Straightforward overrides: both CLI arguments and Web/API request parameters can override the config file at runtime
 
-## Workflow
+<a id="public-site"></a>
 
-```text
-Requirement
-  -> Outline / Page Content
-  -> Slide Images
-  -> Standard PPTX
-  -> MinerU Asset Parsing
-  -> Browser-side Placeholder Matching
-  -> Editable PPTX
-```
+## Public Site
+
+We also run a public-interest site at [editdeck.top](https://editdeck.top) so more people can try the open-source project for free.
+
+- After starring the project, each user gets 5 free generations
+- Daily check-in adds 1 extra free generation
+- Because of server cost limits, you may occasionally run into unexpected errors
+- If you do, feedback is very welcome
 
 <a id="showcase"></a>
 
@@ -80,11 +80,11 @@ Requirement
 
 Following the side-by-side comparison style used by PPTAgent, each case is shown in two columns: the left side is the image-only result, and the right side is the fully editable reconstruction.
 
-### Case 1
+### Case 1 · AI Productivity Playbook for Knowledge Teams
 
 **Prompt**
 
-> 做一份 打造高质量PPT汇报的系统方法 6页
+> Create a professional presentation in English titled "AI Productivity Playbook for Knowledge Teams". Include practical workflows, tool stacks, ROI metrics, and a 90-day rollout plan. Keep all slide text strictly in English.
 
 <table>
   <tr>
@@ -92,8 +92,8 @@ Following the side-by-side comparison style used by PPTAgent, each case is shown
     <th width="50%">Fully Editable Deck</th>
   </tr>
   <tr>
-    <td><img src="./case-study/contact-sheets/demo1_buke.png" alt="Case 1 image-only deck" /></td>
-    <td><img src="./case-study/contact-sheets/demo1.png" alt="Case 1 fully editable deck" /></td>
+    <td><img src="./case-study/contact-sheets/english_case1_pure.png" alt="Case 1 English image-only deck" /></td>
+    <td><img src="./case-study/contact-sheets/english_case1_editable.png" alt="Case 1 English fully editable deck" /></td>
   </tr>
 </table>
 
@@ -199,6 +199,15 @@ python -m app.cli generate "Create an AI office productivity improvement plan" \
   --export-mode both
 ```
 
+Generate a PPT with requirements and supplementary reference documents (supports pdf, docx, txt, md, etc.):
+
+```bash
+python -m app.cli generate "基于我的文档中的国内外研究现状，做一份现状分析ppt" \
+  --slide-count auto \
+  --export-mode both \
+  --source-file data.docx 
+```
+
 Generate with style and uploaded reference files:
 
 ```bash
@@ -297,57 +306,6 @@ Useful fallback rules:
 - `models.editable.browser_path` can be left empty — at runtime it tries explicit arguments, environment variables, and the system `PATH`
 
 For a complete example and field reference, see [config/README.md](./config/README.md).
-
-## Output
-
-Each run writes results under `generated/<run_id>/`. A typical directory structure:
-
-```text
-generated/<run_id>/
-├─ slide_01.png
-├─ slide_02.png
-├─ ...
-├─ *.pptx
-├─ editable_deck/
-│  ├─ editable_deck.pptx
-│  ├─ result.json
-│  └─ ...
-└─ logs/
-```
-
-The editable pipeline also leaves behind these intermediate artifacts for debugging:
-
-- `edit_assets/`
-- `attempt_01/`
-- `filled_preview/`
-- `browser_asset_manifest.json`
-
-## Project Structure
-
-```text
-.
-├─ app/
-│  ├─ cli.py
-│  ├─ pipeline.py
-│  ├─ settings.py
-│  └─ editable_ppt/
-├─ webapp/
-│  ├─ main.py
-│  └─ static/
-├─ config/
-├─ scripts/
-├─ generated/
-└─ requirements.txt
-```
-
-Core files:
-
-- [app/cli.py](./app/cli.py)
-- [app/pipeline.py](./app/pipeline.py)
-- [app/settings.py](./app/settings.py)
-- [app/editable_ppt/service.py](./app/editable_ppt/service.py)
-- [app/editable_ppt/mineru_assets.py](./app/editable_ppt/mineru_assets.py)
-- [webapp/main.py](./webapp/main.py)
 
 <a id="faq"></a>
 
