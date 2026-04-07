@@ -9,17 +9,17 @@
   <img src="https://img.shields.io/badge/License-MIT-black?style=flat-square" alt="MIT License" />
 </p>
 
-<p align="center"><strong>AI Image -> EditDeck PPT -> Fully Editable</strong></p>
+<p align="center"><strong>English Case: Image-only Deck -> Fully Editable Deck -> Editing View</strong></p>
 <table align="center">
   <tr>
-    <th width="33%">1) AI-generated image (origin)</th>
-    <th width="33%">2) EditDeck PPT output (pic)</th>
-    <th width="33%">3) Fully editable PPT in EditDeck (edit)</th>
+    <th width="33%">1) Image-only deck</th>
+    <th width="33%">2) Fully editable deck</th>
+    <th width="33%">3) Editing view</th>
   </tr>
   <tr>
-    <td><img src="./case-study/origin.png" alt="AI-generated image origin" /></td>
-    <td><img src="./case-study/pic.png" alt="EditDeck PPT output pic" /></td>
-    <td><img src="./case-study/edit.png" alt="Fully editable PPT edit" /></td>
+    <td><img src="./case-study/en-nonedit.png" alt="English image-only deck" /></td>
+    <td><img src="./case-study/en-edit.png" alt="English fully editable deck" /></td>
+    <td><img src="./case-study/en-editsample.png" alt="English editing view" /></td>
   </tr>
 </table>
 
