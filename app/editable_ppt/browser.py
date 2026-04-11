@@ -100,6 +100,21 @@ def _read_runtime_state(page) -> dict[str, object]:
     )
 
 
+def _summarize_browser_errors(page_errors: list[str], console_errors: list[str]) -> str:
+    seen: set[str] = set()
+    merged: list[str] = []
+    for source, rows in (("pageerror", page_errors), ("console", console_errors)):
+        for row in rows:
+            message = str(row or "").strip()
+            if not message or message in seen:
+                continue
+            seen.add(message)
+            merged.append(f"{source}: {message}")
+            if len(merged) >= 3:
+                return " | ".join(merged)
+    return " | ".join(merged)
+
+
 def execute_html_and_download_pptx_with_runtime(
     html_path: Path,
     download_dir: Path,
@@ -117,6 +132,8 @@ def execute_html_and_download_pptx_with_runtime(
     save_path: Path | None = None
     run_error: Exception | None = None
     runtime_state: dict[str, object] = {"matches": {}, "used_ids": {}}
+    page_errors: list[str] = []
+    console_errors: list[str] = []
 
     try:
         playwright = sync_playwright().start()
@@ -126,13 +143,22 @@ def execute_html_and_download_pptx_with_runtime(
         browser = playwright.chromium.launch(**launch_kwargs)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
+        page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+        page.on(
+            "console",
+            lambda msg: console_errors.append(msg.text)
+            if msg.type == "error"
+            else None,
+        )
 
         page.goto(html_path.resolve().as_uri(), wait_until="domcontentloaded", timeout=90000)
         wait_for_pptxgenjs(page, timeout_ms=60000)
 
         has_generate_fn = page.evaluate("() => typeof window.generateSlide === 'function'")
         if not has_generate_fn:
-            raise RuntimeError("Generated HTML does not define function generateSlide().")
+            error_summary = _summarize_browser_errors(page_errors, console_errors)
+            detail = f" JavaScript runtime errors: {error_summary}" if error_summary else ""
+            raise RuntimeError(f"Generated HTML does not define function generateSlide().{detail}")
 
         try:
             with page.expect_download(timeout=timeout_ms) as download_info:
@@ -140,10 +166,14 @@ def execute_html_and_download_pptx_with_runtime(
             download = download_info.value
             runtime_state = _read_runtime_state(page)
         except PlaywrightTimeoutError as exc:
-            run_error = TimeoutError("No PPTX download event was detected after generateSlide().")
+            error_summary = _summarize_browser_errors(page_errors, console_errors)
+            detail = f" JavaScript runtime errors: {error_summary}" if error_summary else ""
+            run_error = TimeoutError(f"No PPTX download event was detected after generateSlide().{detail}")
             run_error.__cause__ = exc
         except Exception as exc:  # noqa: BLE001
-            run_error = RuntimeError(f"generateSlide() execution failed: {exc}")
+            error_summary = _summarize_browser_errors(page_errors, console_errors)
+            detail = f" JavaScript runtime errors: {error_summary}" if error_summary else ""
+            run_error = RuntimeError(f"generateSlide() execution failed: {exc}{detail}")
 
         if run_error is None:
             suggested_name = download.suggested_filename or "editable_deck.pptx"

@@ -11,6 +11,12 @@ from app.model_api import chat_completion_text
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "editable_slide_builder.md"
 
 
+class SlideCodegenError(ValueError):
+    def __init__(self, message: str, *, raw_text: str = "") -> None:
+        super().__init__(message)
+        self.raw_text = raw_text
+
+
 def load_prompt_text(prompt_file: Optional[Path]) -> str:
     path = prompt_file or PROMPT_PATH
     if not path.exists():
@@ -165,6 +171,10 @@ def _extract_function(text: str, name: str) -> Optional[str]:
     return text[match.start() : close_brace + 1].strip()
 
 
+def _has_function_marker(text: str, name: str) -> bool:
+    return bool(re.search(rf"(async\s+)?function\s+{name}\s*\(", text))
+
+
 def _extract_script_content(text: str) -> Optional[str]:
     matches = re.findall(r"<script[^>]*>(.*?)</script>", text, flags=re.IGNORECASE | re.DOTALL)
     if matches:
@@ -281,10 +291,16 @@ def normalize_slide_builder(raw_text: str) -> str:
         build_slide = _extract_function(candidate, "buildSlide")
         if build_slide:
             return _sanitize_builder_code(_remove_function_definition(build_slide, "addPH").strip())
+        if _has_function_marker(candidate, "buildSlide"):
+            raise ValueError("Model output contained a buildSlide() declaration, but the function body was incomplete or truncated.")
 
         generate_slide = _extract_function(candidate, "generateSlide")
         if generate_slide:
             return _sanitize_builder_code(_normalize_generate_slide(generate_slide))
+        if _has_function_marker(candidate, "generateSlide"):
+            raise ValueError(
+                "Model output contained a generateSlide() declaration, but the function body was incomplete or truncated."
+            )
 
         if "slide.add" in candidate or "addPH(" in candidate:
             return _wrap_inline_slide_code(candidate)
@@ -341,5 +357,9 @@ def call_model_for_slide_code(
         temperature=None,
         max_tokens=max_tokens,
     )
-    builder = normalize_slide_builder(normalize_content(raw_text))
+    normalized_text = normalize_content(raw_text)
+    try:
+        builder = normalize_slide_builder(normalized_text)
+    except ValueError as exc:
+        raise SlideCodegenError(str(exc), raw_text=normalized_text) from exc
     return raw_text, builder

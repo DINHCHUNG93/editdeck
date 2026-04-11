@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import concurrent.futures
 import re
@@ -28,7 +28,7 @@ from .browser import (
     execute_html_and_download_pptx,
     execute_html_and_download_pptx_with_runtime,
 )
-from .codegen import call_model_for_slide_code, load_prompt_text
+from .codegen import SlideCodegenError, call_model_for_slide_code, load_prompt_text
 from .mineru_assets import resolve_mineru_assets_json
 
 ProgressCallback = Optional[Callable[[dict[str, Any]], None]]
@@ -546,6 +546,9 @@ class EditableDeckPipeline:
             )
 
             builder: Optional[str] = None
+            raw_text: str = ""
+            raw_response_path: Optional[Path] = None
+            builder_path = attempt_dir / "build_slide.js"
             try:
                 raw_text, builder = call_model_for_slide_code(
                     provider=runtime_cfg.provider,
@@ -558,8 +561,8 @@ class EditableDeckPipeline:
                     retry_feedback=retry_feedback,
                     previous_builder=previous_builder,
                 )
-                (attempt_dir / "model_response.txt").write_text(raw_text, encoding="utf-8")
-                builder_path = attempt_dir / "build_slide.js"
+                raw_response_path = attempt_dir / "model_response.txt"
+                raw_response_path.write_text(raw_text, encoding="utf-8")
                 builder_path.write_text(builder, encoding="utf-8")
 
                 preview_payload = self._render_preview_artifacts(
@@ -584,20 +587,38 @@ class EditableDeckPipeline:
                 previous_builder = builder
                 best_result = attempt_result
                 break
+            except SlideCodegenError as exc:
+                raw_text = exc.raw_text
+                if raw_text:
+                    raw_response_path = attempt_dir / "model_response.txt"
+                    raw_response_path.write_text(raw_text, encoding="utf-8")
+                last_error = exc
+                retry_feedback = self._build_retry_feedback(exc)
+                (attempt_dir / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
+                result_payload: dict[str, Any] = {
+                    "selected_attempt": attempt,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "retry_feedback": retry_feedback,
+                }
+                if raw_response_path is not None:
+                    result_payload["model_response_path"] = str(raw_response_path)
+                write_json(attempt_dir / "result.json", result_payload)
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 if builder:
                     previous_builder = builder
                 retry_feedback = self._build_retry_feedback(exc)
                 (attempt_dir / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
-                write_json(
-                    attempt_dir / "result.json",
-                    {
-                        "selected_attempt": attempt,
-                        "error": f"{type(exc).__name__}: {exc}",
-                        "retry_feedback": retry_feedback,
-                    },
-                )
+                result_payload = {
+                    "selected_attempt": attempt,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "retry_feedback": retry_feedback,
+                }
+                if raw_response_path is not None:
+                    result_payload["model_response_path"] = str(raw_response_path)
+                if builder_path.exists():
+                    result_payload["builder_path"] = str(builder_path)
+                write_json(attempt_dir / "result.json", result_payload)
             if attempt < runtime_cfg.max_attempts and runtime_cfg.sleep_seconds > 0:
                 time.sleep(runtime_cfg.sleep_seconds)
 
@@ -888,4 +909,3 @@ async function generateSlide() {{
             "Fix the JavaScript and return a full fresh `buildSlide(slide, pptx)` function. "
             f"Runtime error: {type(exc).__name__}: {exc}"
         )
-
