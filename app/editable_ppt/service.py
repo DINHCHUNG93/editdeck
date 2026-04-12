@@ -29,6 +29,7 @@ from .browser import (
     execute_html_and_download_pptx_with_runtime,
 )
 from .codegen import SlideCodegenError, call_model_for_slide_code, load_prompt_text
+from .layout_fix import apply_layout_fix
 from .mineru_assets import resolve_mineru_assets_json
 
 ProgressCallback = Optional[Callable[[dict[str, Any]], None]]
@@ -357,6 +358,9 @@ class EditableDeckPipeline:
             )
             final_path = output_root / "editable_deck.pptx"
             generated_path.replace(final_path)
+            emit("editable_layout_fix", "Applying final PPT layout fix...", 95, len(images), len(images))
+            layout_fix_summary = self._post_process_final_pptx(final_path=final_path, output_root=output_root)
+            emit("editable_layout_fix", layout_fix_summary, 98, len(images), len(images))
             total_remaining = count_ph_text_in_pptx(final_path)
 
             result = EditableDeckResult(
@@ -373,6 +377,9 @@ class EditableDeckPipeline:
         except Exception as exc:
             emit("failed", f"Editable PPT generation failed: {exc}", 100, done=True, error=str(exc))
             raise
+
+    def _post_process_final_pptx(self, final_path: Path, output_root: Path) -> str:
+        return apply_layout_fix(final_path=final_path, output_root=output_root, mode="balanced")
 
     def discover_slide_images(self, run_dir: Path) -> list[Path]:
         base_dir = run_dir.resolve()
@@ -909,3 +916,4 @@ async function generateSlide() {{
             "Fix the JavaScript and return a full fresh `buildSlide(slide, pptx)` function. "
             f"Runtime error: {type(exc).__name__}: {exc}"
         )
+
