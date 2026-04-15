@@ -67,7 +67,7 @@ If your ideal workflow is "get the visual draft fast, then keep going until the 
 
 ## Public Site
 
-We also run a public-interest site at [editdeck.top](https://editdeck.top) so more people can try the open-source project for free.
+We also run a public-interest site at [editdeck.top](https://editdeck.top) so more people can try the open-source project for free. If the main domain is temporarily unavailable, you can also use the fallback address [http://118.195.198.236/](http://118.195.198.236/).
 
 - After starring the project, each user gets 5 free generations
 - Daily check-in adds 1 extra free generation
