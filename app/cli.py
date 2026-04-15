@@ -255,7 +255,7 @@ def _validate_editable_backend_args(args: argparse.Namespace) -> None:
 
 def _run_generate(args: argparse.Namespace) -> int:
     from app.editable_ppt import EditableDeckPipeline
-    from app.pipeline import PPTImagePipeline
+    from app.pipeline import PPTImagePipeline, generate_run_id
     from app.settings import load_settings
     from app.source_ingest import SourceDocumentProcessor
 
@@ -302,10 +302,14 @@ def _run_generate(args: argparse.Namespace) -> int:
     editable_runtime_cfg = _build_editable_runtime_config(editable_pipeline, args) if args.editable_ppt else None
     style_bytes, style_mime = _load_style_template(args.style_template)
     source_payloads = _load_source_files(args.source_files)
+    run_id = generate_run_id()
+    run_dir = Path(settings.output_root).expanduser().resolve() / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
     prepared_requirement = source_processor.prepare_requirement(
         user_requirement=requirement,
         source_files=source_payloads,
         runtime_cfg=source_runtime_cfg,
+        run_dir=run_dir,
     )
     progress = ProgressPrinter()
 
@@ -325,6 +329,7 @@ def _run_generate(args: argparse.Namespace) -> int:
         export_mode=args.export_mode,
         information_density=_parse_information_density(args.information_density),
         progress_callback=generation_progress,
+        run_id=run_id,
     )
 
     if args.editable_ppt:

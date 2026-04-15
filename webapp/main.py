@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.editable_ppt import EditableDeckPipeline
-from app.pipeline import PPTImagePipeline, RuntimeConfig
+from app.pipeline import PPTImagePipeline, RuntimeConfig, generate_run_id
 from app.schemas import EditableDeckResult, SlideOutline, SlideResult
 from app.settings import get_settings
 from app.source_ingest import SourceDocumentProcessor, SourceFileInput
@@ -307,6 +307,10 @@ def _run_generation_job(
     editable_runtime_cfg,
 ) -> None:
     _update_job(job_id, state="running", step="prepare", message="任务开始执行...", progress=1)
+    run_id = generate_run_id()
+    run_dir = Path(settings.output_root).expanduser().resolve() / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    _update_job(job_id, run_id=run_id, output_dir=str(run_dir))
 
     def on_progress(payload: dict[str, Any]) -> None:
         _update_job(
@@ -326,6 +330,7 @@ def _run_generation_job(
             user_requirement=user_requirement,
             source_files=source_files,
             runtime_cfg=source_runtime_cfg,
+            run_dir=run_dir,
         )
         generation_progress = on_progress
         editable_progress = on_progress
@@ -343,6 +348,7 @@ def _run_generation_job(
             export_mode=export_mode,
             information_density=information_density,
             progress_callback=generation_progress,
+            run_id=run_id,
         )
 
         if generate_editable_ppt:
@@ -538,10 +544,14 @@ async def generate_sync(
             if upload and (upload.filename or "").strip()
         ]
         _validate_style_inputs(style_description=style_description, style_bytes=style_bytes)
+        run_id = generate_run_id()
+        run_dir = Path(settings.output_root).expanduser().resolve() / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
         prepared_requirement = source_processor.prepare_requirement(
             user_requirement=user_requirement,
             source_files=source_payloads,
             runtime_cfg=source_runtime_cfg,
+            run_dir=run_dir,
         )
 
         result = pipeline.run(
@@ -554,6 +564,7 @@ async def generate_sync(
             export_mode=export_mode,
             information_density=resolved_information_density,
             progress_callback=None,
+            run_id=run_id,
         )
         if _parse_bool(generate_editable_ppt):
             editable_result = editable_pipeline.run_from_images(

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Sequence
+from uuid import uuid4
 
 import requests
 
@@ -18,6 +21,28 @@ MAX_SOURCE_FILES = 5
 SOURCE_CHUNK_SIZE = 5000
 MAX_CHUNKS_PER_SOURCE = 24
 MAX_REFINED_CHUNK_CHARS = 2400
+
+LOGGER = logging.getLogger(__name__)
+
+
+class ImageOnlyPdfError(ValueError):
+    pass
+
+
+def _create_source_ingest_log_handler(*, run_dir: Optional[Path], output_root: Path) -> tuple[logging.Handler, str]:
+    if run_dir is not None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        log_path = run_dir / "source_ingest.log"
+    else:
+        log_dir = output_root / "logs" / "source_ingest"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        log_path = log_dir / f"source_ingest_{ts}_{uuid4().hex[:8]}.log"
+
+    handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    return handler, str(log_path.resolve())
 
 
 @dataclass(frozen=True)
@@ -125,6 +150,7 @@ class SourceDocumentProcessor:
         user_requirement: str,
         source_files: Sequence[SourceFileInput],
         runtime_cfg: SourceIngestRuntimeConfig,
+        run_dir: Optional[Path] = None,
     ) -> PreparedRequirement:
         cleaned_requirement = (user_requirement or "").strip()
         if not source_files:
@@ -136,17 +162,55 @@ class SourceDocumentProcessor:
         if len(source_files) > MAX_SOURCE_FILES:
             raise ValueError(f"At most {MAX_SOURCE_FILES} source files are supported per request.")
 
+        handler: Optional[logging.Handler] = None
+        log_path = ""
+        previous_level = LOGGER.level
+        try:
+            output_root = Path(self.settings.output_root).expanduser().resolve()
+            handler, log_path = _create_source_ingest_log_handler(run_dir=run_dir, output_root=output_root)
+            LOGGER.addHandler(handler)
+            LOGGER.setLevel(logging.INFO)
+        except Exception:
+            handler = None
+            log_path = ""
+            previous_level = LOGGER.level
+
         extracted_sources: list[ExtractedSource] = []
-        with tempfile.TemporaryDirectory(prefix="editdeck_sources_") as temp_dir_raw:
-            temp_dir = Path(temp_dir_raw)
-            for index, source_file in enumerate(source_files, start=1):
-                extracted_sources.append(
-                    self._extract_source_file(
-                        source_file=source_file,
-                        runtime_cfg=runtime_cfg,
-                        temp_dir=temp_dir / f"source_{index:02d}",
+        try:
+            if log_path:
+                LOGGER.info("source_ingest_log_path path=%s", log_path)
+            LOGGER.info("source_ingest_start files=%d", len(source_files))
+            with tempfile.TemporaryDirectory(prefix="editdeck_sources_") as temp_dir_raw:
+                temp_dir = Path(temp_dir_raw)
+                for index, source_file in enumerate(source_files, start=1):
+                    LOGGER.info(
+                        "source_file_start index=%d name=%s size_bytes=%d",
+                        index,
+                        (source_file.name or "").strip() or "source",
+                        len(source_file.data or b""),
                     )
-                )
+                    extracted_sources.append(
+                        self._extract_source_file(
+                            source_file=source_file,
+                            runtime_cfg=runtime_cfg,
+                            temp_dir=temp_dir / f"source_{index:02d}",
+                        )
+                    )
+                    last = extracted_sources[-1]
+                    LOGGER.info(
+                        "source_file_done index=%d name=%s method=%s chars=%d",
+                        index,
+                        last.name,
+                        last.extraction_method,
+                        len(last.text or ""),
+                    )
+        finally:
+            if handler is not None:
+                try:
+                    LOGGER.removeHandler(handler)
+                finally:
+                    handler.close()
+            LOGGER.setLevel(previous_level)
 
         final_requirement, summary = self._synthesize_requirement(
             user_requirement=cleaned_requirement,
@@ -175,9 +239,11 @@ class SourceDocumentProcessor:
 
         file_path = temp_dir / safe_name
         file_path.write_bytes(source_file.data)
+        LOGGER.info("extract_start name=%s suffix=%s path=%s", safe_name, suffix, str(file_path))
 
         if suffix in {".txt", ".md"}:
             text = self._read_text_file(file_path)
+            LOGGER.info("extract_ok name=%s suffix=%s method=plain_text chars=%d", safe_name, suffix, len(text))
             return ExtractedSource(
                 name=safe_name,
                 suffix=suffix,
@@ -188,6 +254,7 @@ class SourceDocumentProcessor:
 
         if suffix == ".docx":
             text = self._extract_docx_text(file_path)
+            LOGGER.info("extract_ok name=%s suffix=%s method=python-docx chars=%d", safe_name, suffix, len(text))
             return ExtractedSource(
                 name=safe_name,
                 suffix=suffix,
@@ -196,14 +263,42 @@ class SourceDocumentProcessor:
                 metadata={"char_count": len(text)},
             )
 
-        text, metadata = self._extract_pdf_text_with_mineru(file_path=file_path, runtime_cfg=runtime_cfg, work_dir=temp_dir)
-        return ExtractedSource(
-            name=safe_name,
-            suffix=suffix,
-            text=text,
-            extraction_method="mineru",
-            metadata=metadata,
-        )
+        try:
+            text, metadata = self._extract_pdf_text_local(file_path)
+            LOGGER.info(
+                "extract_ok name=%s suffix=%s method=pymupdf chars=%d pages=%s text_pages=%s image_pages=%s",
+                safe_name,
+                suffix,
+                len(text),
+                metadata.get("page_count"),
+                metadata.get("pages_with_text"),
+                metadata.get("pages_with_images"),
+            )
+            return ExtractedSource(
+                name=safe_name,
+                suffix=suffix,
+                text=text,
+                extraction_method="pymupdf",
+                metadata=metadata,
+            )
+        except ImageOnlyPdfError as exc:
+            LOGGER.warning("pdf_image_only name=%s reason=%s; fallback=mineru", safe_name, str(exc))
+            text, metadata = self._extract_pdf_text_with_mineru(
+                file_path=file_path,
+                runtime_cfg=runtime_cfg,
+                work_dir=temp_dir,
+            )
+            metadata = dict(metadata)
+            metadata["fallback_reason"] = "image_only_pdf"
+            metadata["local_error"] = str(exc)
+            LOGGER.info("extract_ok name=%s suffix=%s method=mineru chars=%d", safe_name, suffix, len(text))
+            return ExtractedSource(
+                name=safe_name,
+                suffix=suffix,
+                text=text,
+                extraction_method="mineru",
+                metadata=metadata,
+            )
 
     @staticmethod
     def _read_text_file(file_path: Path) -> str:
@@ -285,6 +380,59 @@ class SourceDocumentProcessor:
             raise ValueError(f"No readable text found in DOCX file: {file_path.name}")
         return text
 
+    @staticmethod
+    def _extract_pdf_text_local(file_path: Path) -> tuple[str, dict[str, Any]]:
+        try:
+            import fitz  # PyMuPDF
+        except ImportError as exc:
+            raise RuntimeError("Local PDF extraction requires `PyMuPDF` (import name: `fitz`).") from exc
+
+        doc = fitz.open(str(file_path))
+        page_count = int(getattr(doc, "page_count", 0) or 0)
+        pages_with_text = 0
+        pages_with_images = 0
+        extracted_pages: list[str] = []
+
+        try:
+            for page_index in range(page_count):
+                page = doc.load_page(page_index)
+                raw = page.get_text("text") or ""
+                cleaned_lines = [line.strip() for line in raw.splitlines() if line.strip()]
+                cleaned = "\n".join(cleaned_lines).strip()
+                if cleaned:
+                    pages_with_text += 1
+                    extracted_pages.append(cleaned)
+
+                has_image = False
+                try:
+                    has_image = bool(page.get_images(full=True))
+                except Exception:
+                    pass
+                if not has_image:
+                    try:
+                        blocks = (page.get_text("dict") or {}).get("blocks") or []
+                        has_image = any((block or {}).get("type") == 1 for block in blocks if isinstance(block, dict))
+                    except Exception:
+                        pass
+                if has_image:
+                    pages_with_images += 1
+        finally:
+            doc.close()
+
+        text = "\n\n".join(extracted_pages).strip()
+        metadata: dict[str, Any] = {
+            "char_count": len(text),
+            "page_count": page_count,
+            "pages_with_text": pages_with_text,
+            "pages_with_images": pages_with_images,
+        }
+
+        if pages_with_text == 0 and pages_with_images > 0:
+            raise ImageOnlyPdfError(f"Image-only PDF detected: {file_path.name}")
+        if not text:
+            raise ValueError(f"No readable text found in PDF file: {file_path.name}")
+        return text, metadata
+
     def _extract_pdf_text_with_mineru(
         self,
         *,
@@ -293,8 +441,10 @@ class SourceDocumentProcessor:
         work_dir: Path,
     ) -> tuple[str, dict[str, Any]]:
         if not runtime_cfg.mineru_api_key:
+            LOGGER.error("mineru_missing_api_key name=%s", file_path.name)
             raise ValueError("PDF extraction requires MINERU_API_KEY or --mineru-api-key.")
 
+        LOGGER.info("mineru_extract_start name=%s model=%s", file_path.name, runtime_cfg.mineru_model_version)
         session = requests.Session()
         headers = {
             "Content-Type": "application/json",
