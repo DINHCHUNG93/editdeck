@@ -24,6 +24,10 @@ from app.settings import Settings
 ProgressCallback = Optional[Callable[[dict[str, Any]], None]]
 
 
+def generate_run_id() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
+
+
 @dataclass
 class RuntimeConfig:
     text_provider: str
@@ -264,6 +268,7 @@ class PPTImagePipeline:
         export_mode: str = "both",
         information_density: str = DEFAULT_INFORMATION_DENSITY,
         progress_callback: ProgressCallback = None,
+        run_id: Optional[str] = None,
     ) -> GenerateResponse:
         requirement = (user_requirement or "").strip()
         style_desc = (style_description or "").strip()
@@ -277,10 +282,14 @@ class PPTImagePipeline:
         if normalized_export_mode not in {"images", "ppt", "both"}:
             raise ValueError("export_mode must be one of: images, ppt, both.")
 
-        run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
-        run_dir = self.output_root / run_id
+        resolved_run_id = (run_id or generate_run_id()).strip()
+        normalized_run_id = resolved_run_id.lower()
+        if not re.fullmatch(r"\d{8}_\d{6}_[0-9a-f]{8}", normalized_run_id):
+            raise ValueError("run_id must match YYYYMMDD_HHMMSS_<8 hex chars>.")
+
+        run_dir = self.output_root / normalized_run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        logger = GenerationLogger(run_id=run_id, run_dir=run_dir)
+        logger = GenerationLogger(run_id=normalized_run_id, run_dir=run_dir)
 
         style_input_meta: dict[str, Any] = {
             "type": "default",

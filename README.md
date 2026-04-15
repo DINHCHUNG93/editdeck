@@ -277,7 +277,7 @@ To produce an editable PPT directly during the generation phase, include the fol
 - `generate_editable_ppt=true`
 - `asset_backend=edit`
 
-When `config/app.yaml` does not have a usable `mineru.api_key`, you need to pass `mineru_api_key` explicitly in the request.
+MinerU is required for editable PPT asset extraction, and for parsing image-only (scanned) PDF reference files. When `config/app.yaml` does not have a usable `mineru.api_key`, pass `mineru_api_key` explicitly in the request.
 
 <a id="configuration"></a>
 

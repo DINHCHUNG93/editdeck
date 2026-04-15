@@ -276,7 +276,7 @@ python -m app.cli editable \
 - `generate_editable_ppt=true`
 - `asset_backend=edit`
 
-当 `config/app.yaml` 里没有可用的 `mineru.api_key` 时，需要通过请求显式传入 `mineru_api_key`。
+MinerU 用于可编辑 PPT 的元素解析与资产抽取，也用于“纯图/扫描”PDF 参考文件的文字提取（本地无文本可提取时自动回退）。当 `config/app.yaml` 里没有可用的 `mineru.api_key` 时，需要通过请求显式传入 `mineru_api_key`。
 
 <a id="configuration"></a>
 
