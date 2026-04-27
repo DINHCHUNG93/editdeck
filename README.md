@@ -1,3 +1,27 @@
+
+EditDeck – công cụ AI giúp biến tài liệu thành slide thuyết trình nhanh hơn nhiều lần
+
+Nếu bạn thường xuyên phải làm PPT từ báo cáo, proposal hay tài liệu dài, thì EditDeck là một dự án mã nguồn mở rất đáng chú ý.
+
+EditDeck tập trung vào việc dùng AI để hỗ trợ tạo, chỉnh sửa và tối ưu slide deck thay vì phải ngồi làm thủ công từng trang.
+
+Điểm nổi bật:
+
+• Biến tài liệu dài thành slide presentation có cấu trúc
+• Hỗ trợ AI chỉnh sửa nội dung slide nhanh chóng
+• Tối ưu bố cục, flow và storytelling cho deck
+• Phù hợp cho pitch deck, báo cáo nội bộ, proposal, teaching materials
+• Giúp team marketing, sales, consultant tiết kiệm rất nhiều thời gian
+• Open-source nên dễ tùy chỉnh theo workflow riêng
+• Phù hợp cho doanh nghiệp muốn self-host thay vì dùng SaaS kín
+
+Thay vì “viết lại từ đầu”, EditDeck giúp AI đóng vai trò như một presentation copilot — hỗ trợ biến ý tưởng thành deck hoàn chỉnh nhanh hơn rất nhiều.
+
+Đây là kiểu project rất hợp cho team startup, agency, consultant và cả nội bộ doanh nghiệp.
+
+#OpenSource #AIProductivity #TiniX #PresentationAI
+
+
 # EditDeck
 
 <p align="center">An end-to-end pipeline from requirement text to slide images, standard PPTX, and editable PPTX.</p>
